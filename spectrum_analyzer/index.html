@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Recorder & Waveform Visualizer</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Voice Recorder & Waveform Visualizer</h1>
+            <p class="subtitle">Record 15 seconds of audio and visualize the waveform</p>
+        </header>
+
+        <main>
+            <div class="canvas-container">
+                <canvas id="waveformCanvas" width="800" height="400"></canvas>
+            </div>
+
+            <div class="controls">
+                <button id="startBtn" class="btn btn-primary">
+                    <span class="btn-icon">🎤</span>
+                    Start Recording
+                </button>
+                <button id="playBtn" class="btn btn-secondary" disabled>
+                    <span class="btn-icon">▶️</span>
+                    Play Recording
+                </button>
+            </div>
+
+            <div class="status-container">
+                <div id="timer" class="timer">Ready</div>
+                <div id="status" class="status">Click "Start Recording" to begin</div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Uses Web Audio API for audio analysis and Canvas API for visualization</p>
+            <p class="note">Microphone access required</p>
+        </footer>
+    </div>
+
+    <!-- Load JavaScript modules -->
+    <script src="js/audioCapture.js"></script>
+    <script src="js/audioAnalyzer.js"></script>
+    <script src="js/waveformRenderer.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
