@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complex Harmonics Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+
+        #controls {
+            height: 200px;
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-bottom: 2px solid #444;
+            overflow-y: auto;
+            display: flex;
+            gap: 30px;
+        }
+
+        .controls-left {
+            flex: 1;
+        }
+
+        .controls-right {
+            flex: 2;
+            max-width: 600px;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: calc(100vh - 200px);
+        }
+
+        canvas {
+            display: block;
+            background-color: #000000;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .control-group {
+            margin-top: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input[type="range"] {
+            width: 200px;
+        }
+
+        .harmonic-control {
+            margin-bottom: 10px;
+            padding: 5px;
+            background-color: #333;
+            border-radius: 4px;
+        }
+
+        .harmonic-control label {
+            display: inline-block;
+            width: 150px;
+        }
+
+        .harmonic-control span {
+            display: inline-block;
+            width: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="controls-left">
+            <h2>Complex Harmonics</h2>
+            <button id="startBtn">Start Animation</button>
+
+            <div class="control-group">
+                <label for="speedSlider">Speed: <span id="speedValue">0.2x</span></label>
+                <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="0.2">
+            </div>
+
+            <div class="control-group">
+                <button id="addHarmonicBtn">Add Harmonic (+)</button>
+                <button id="addNegHarmonicBtn">Add Harmonic (-)</button>
+            </div>
+
+            <div class="control-group">
+                <button id="drawModeBtn">Enable Drawing Mode</button>
+                <button id="clearDrawingBtn">Clear Drawing</button>
+            </div>
+        </div>
+
+        <div class="controls-right">
+            <h3>Magnitude Controls</h3>
+            <div id="magnitudeControls"></div>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="harmonicsCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('harmonicsCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        const startBtn = document.getElementById('startBtn');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+        const addHarmonicBtn = document.getElementById('addHarmonicBtn');
+        const addNegHarmonicBtn = document.getElementById('addNegHarmonicBtn');
+        const magnitudeControls = document.getElementById('magnitudeControls');
+        const drawModeBtn = document.getElementById('drawModeBtn');
+        const clearDrawingBtn = document.getElementById('clearDrawingBtn');
+
+        // Constants
+        const UNIT_LENGTH = 100; // 1 unit = 100 pixels
+        const FPS = 60;
+        const FRAME_INTERVAL = 1000 / FPS; // milliseconds per frame
+
+        // Animation state
+        let isAnimating = false;
+        let startTime = null;
+        let lastFrameTime = 0;
+        let animationFrameId = null;
+        let speedMultiplier = 0.2;
+
+        // Harmonics data: array of {frequency: n, magnitude: m}
+        // Frequency 0 is the DC component (constant offset, doesn't rotate)
+        // Frequency 1 is the base frequency
+        let harmonics = [
+            { frequency: 0, magnitude: 0.5 }, // DC component (constant offset)
+            { frequency: 1, magnitude: 1.0 }  // Base frequency
+        ];
+
+        // Trace points - stores the tip positions for one cycle
+        let tracePoints = [];
+
+        // Drawing mode
+        let isDrawingMode = false;
+        let isDrawing = false;
+        let userDrawnPoints = [];
+
+        // Set canvas size to fill container
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            userDrawnPoints = []; // Clear drawing on resize
+            if (!isAnimating) {
+                draw(0);
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Get origin (center of canvas)
+        function getOrigin() {
+            return {
+                x: canvas.width / 2,
+                y: canvas.height / 2
+            };
+        }
+
+        // Convert logical coordinates to canvas coordinates
+        function toCanvasCoords(x, y) {
+            const origin = getOrigin();
+            return {
+                x: origin.x + x,
+                y: origin.y - y  // Flip y-axis (canvas y increases downward)
+            };
+        }
+
+        // Draw coordinate axes
+        function drawAxes() {
+            const origin = getOrigin();
+            ctx.strokeStyle = '#ffff00';  // Yellow
+            ctx.lineWidth = 2;
+
+            // X-axis
+            ctx.beginPath();
+            ctx.moveTo(0, origin.y);
+            ctx.lineTo(canvas.width, origin.y);
+            ctx.stroke();
+
+            // Y-axis
+            ctx.beginPath();
+            ctx.moveTo(origin.x, 0);
+            ctx.lineTo(origin.x, canvas.height);
+            ctx.stroke();
+        }
+
+        // Draw an arrow (vector) from start to end point
+        // startX, startY, endX, endY are in logical coordinates (not canvas coordinates)
+        function drawArrow(startX, startY, endX, endY, color = '#00ff00', lineWidth = 2) {
+            const start = toCanvasCoords(startX, startY);
+            const end = toCanvasCoords(endX, endY);
+
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = lineWidth;
+
+            // Draw line from start to end
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+
+            // Draw arrowhead
+            const arrowLength = 15;
+            const arrowAngle = Math.PI / 6;  // 30 degrees
+
+            // Calculate angle of the line
+            const angle = Math.atan2(start.y - end.y, end.x - start.x);
+
+            // Calculate arrowhead points
+            ctx.beginPath();
+            ctx.moveTo(end.x, end.y);
+            ctx.lineTo(
+                end.x - arrowLength * Math.cos(angle - arrowAngle),
+                end.y + arrowLength * Math.sin(angle - arrowAngle)
+            );
+            ctx.lineTo(
+                end.x - arrowLength * Math.cos(angle + arrowAngle),
+                end.y + arrowLength * Math.sin(angle + arrowAngle)
+            );
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Animation method - receives elapsed time in milliseconds
+        function animate(elapsedMs) {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw axes
+            drawAxes();
+
+            // One full rotation every 2 seconds (2000ms) for base frequency
+            const rotationPeriod = 2000; // milliseconds
+
+            // Chain all harmonic vectors together
+            let currentX = 0;
+            let currentY = 0;
+
+            // Colors for different harmonics
+            const colors = ['#00ff00', '#ff00ff', '#00ffff', '#ff8800', '#8800ff', '#ff0088'];
+
+            harmonics.forEach((harmonic, index) => {
+                // Calculate angle for this harmonic
+                const angle = -(elapsedMs * speedMultiplier * harmonic.frequency / rotationPeriod) * 2 * Math.PI;
+
+                // Calculate vector end point (magnitude * unit length)
+                const vectorX = Math.cos(angle) * harmonic.magnitude * UNIT_LENGTH;
+                const vectorY = Math.sin(angle) * harmonic.magnitude * UNIT_LENGTH;
+
+                // Draw vector from current position
+                const endX = currentX + vectorX;
+                const endY = currentY + vectorY;
+
+                drawArrow(currentX, currentY, endX, endY, colors[index % colors.length], 2);
+
+                // Update current position for next vector
+                currentX = endX;
+                currentY = endY;
+            });
+
+            // Add the final tip position to trace points
+            tracePoints.push({ x: currentX, y: currentY, time: elapsedMs * speedMultiplier });
+
+            // Keep only points from the last 2 cycles
+            const twoCycles = rotationPeriod * 2;
+            const currentTime = elapsedMs * speedMultiplier;
+            tracePoints = tracePoints.filter(point => {
+                return (currentTime - point.time) <= twoCycles;
+            });
+
+            // Draw the trace
+            drawTrace();
+
+            // Draw user's shape if exists
+            drawUserShape();
+        }
+
+        // Draw the traced path
+        function drawTrace() {
+            if (tracePoints.length < 2) return;
+
+            ctx.strokeStyle = '#ffffff'; // White color
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            // Convert first point to canvas coordinates
+            const firstPoint = toCanvasCoords(tracePoints[0].x, tracePoints[0].y);
+            ctx.moveTo(firstPoint.x, firstPoint.y);
+
+            // Draw lines through all trace points
+            for (let i = 1; i < tracePoints.length; i++) {
+                const point = toCanvasCoords(tracePoints[i].x, tracePoints[i].y);
+                ctx.lineTo(point.x, point.y);
+            }
+
+            ctx.stroke();
+        }
+
+        // Draw user's drawn shape (closed path)
+        function drawUserShape() {
+            if (userDrawnPoints.length < 2) return;
+
+            ctx.strokeStyle = '#ffff00'; // Yellow color
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+
+            // Start at first point
+            ctx.moveTo(userDrawnPoints[0].x, userDrawnPoints[0].y);
+
+            // Draw lines through all points
+            for (let i = 1; i < userDrawnPoints.length; i++) {
+                ctx.lineTo(userDrawnPoints[i].x, userDrawnPoints[i].y);
+            }
+
+            // Close the path (connect last point to first)
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        // Convert canvas coordinates to logical coordinates
+        function canvasCoordsToLogical(canvasX, canvasY) {
+            const origin = getOrigin();
+            return {
+                x: canvasX - origin.x,
+                y: -(canvasY - origin.y)  // Flip y-axis
+            };
+        }
+
+        // Mouse event handlers for drawing
+        function onMouseDown(e) {
+            if (!isDrawingMode) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const canvasY = e.clientY - rect.top;
+
+            isDrawing = true;
+            userDrawnPoints = []; // Start fresh drawing
+            userDrawnPoints.push({ x: canvasX, y: canvasY });
+        }
+
+        function onMouseMove(e) {
+            if (!isDrawingMode || !isDrawing) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const canvasY = e.clientY - rect.top;
+
+            userDrawnPoints.push({ x: canvasX, y: canvasY });
+
+            // Redraw to show the shape being drawn
+            if (!isAnimating) {
+                draw(0);
+            }
+        }
+
+        function onMouseUp(e) {
+            if (!isDrawingMode || !isDrawing) return;
+
+            isDrawing = false;
+
+            // Redraw to show final shape
+            if (!isAnimating) {
+                draw(0);
+            }
+        }
+
+        // Main draw function
+        function draw(elapsedMs) {
+            animate(elapsedMs);
+        }
+
+        // Animation loop
+        function animationLoop(currentTime) {
+            if (!isAnimating) return;
+
+            if (startTime === null) {
+                startTime = currentTime;
+                lastFrameTime = currentTime;
+            }
+
+            const timeSinceLastFrame = currentTime - lastFrameTime;
+
+            // Only render if enough time has passed (30 FPS)
+            if (timeSinceLastFrame >= FRAME_INTERVAL) {
+                const elapsedMs = currentTime - startTime;
+                draw(elapsedMs);
+                lastFrameTime = currentTime - (timeSinceLastFrame % FRAME_INTERVAL);
+            }
+
+            animationFrameId = requestAnimationFrame(animationLoop);
+        }
+
+        // Start/Restart animation
+        function startAnimation() {
+            // Reset animation state
+            startTime = null;
+            lastFrameTime = 0;
+            tracePoints = []; // Clear trace points
+
+            if (!isAnimating) {
+                isAnimating = true;
+                startBtn.textContent = 'Restart Animation';
+                animationFrameId = requestAnimationFrame(animationLoop);
+            } else {
+                // Restart by resetting time
+                startTime = null;
+            }
+        }
+
+        // Button event listener
+        startBtn.addEventListener('click', startAnimation);
+
+        // Speed slider event listener
+        speedSlider.addEventListener('input', (e) => {
+            speedMultiplier = parseFloat(e.target.value);
+            speedValue.textContent = speedMultiplier.toFixed(1) + 'x';
+        });
+
+        // Render magnitude controls
+        function renderMagnitudeControls() {
+            magnitudeControls.innerHTML = '';
+
+            harmonics.forEach((harmonic, index) => {
+                const controlDiv = document.createElement('div');
+                controlDiv.className = 'harmonic-control';
+
+                const label = document.createElement('label');
+                if (harmonic.frequency === 0) {
+                    label.textContent = 'DC Offset (0x):';
+                } else if (harmonic.frequency === 1) {
+                    label.textContent = 'Base Frequency (+1x):';
+                } else if (harmonic.frequency === -1) {
+                    label.textContent = 'Base Frequency (-1x):';
+                } else if (harmonic.frequency > 1) {
+                    label.textContent = `Harmonic ${harmonic.frequency - 1} (+${harmonic.frequency}x):`;
+                } else {
+                    label.textContent = `Harmonic ${Math.abs(harmonic.frequency) - 1} (${harmonic.frequency}x):`;
+                }
+
+                const valueSpan = document.createElement('span');
+                valueSpan.id = `mag-value-${index}`;
+                valueSpan.textContent = harmonic.magnitude.toFixed(2);
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.min = '0';
+                slider.max = '2';
+                slider.step = '0.01';
+                slider.value = harmonic.magnitude;
+                slider.id = `mag-slider-${index}`;
+
+                slider.addEventListener('input', (e) => {
+                    harmonics[index].magnitude = parseFloat(e.target.value);
+                    valueSpan.textContent = harmonics[index].magnitude.toFixed(2);
+                    tracePoints = []; // Clear trace when magnitude changes
+                });
+
+                controlDiv.appendChild(label);
+                controlDiv.appendChild(valueSpan);
+                controlDiv.appendChild(slider);
+                magnitudeControls.appendChild(controlDiv);
+            });
+        }
+
+        // Add a new positive harmonic
+        function addHarmonic() {
+            // Find the highest positive frequency
+            const maxPosFreq = Math.max(...harmonics.map(h => h.frequency > 0 ? h.frequency : 0));
+            const nextFrequency = maxPosFreq + 1;
+
+            harmonics.push({
+                frequency: nextFrequency,
+                magnitude: 1.0
+            });
+            tracePoints = []; // Clear trace when adding harmonic
+            renderMagnitudeControls();
+        }
+
+        // Add a new negative harmonic (counter-clockwise)
+        function addNegativeHarmonic() {
+            // Find the lowest negative frequency
+            const minNegFreq = Math.min(...harmonics.map(h => h.frequency < 0 ? h.frequency : 0));
+            const nextFrequency = minNegFreq - 1;
+
+            harmonics.push({
+                frequency: nextFrequency,
+                magnitude: 1.0
+            });
+            tracePoints = []; // Clear trace when adding harmonic
+            renderMagnitudeControls();
+        }
+
+        // Add harmonic button event listeners
+        addHarmonicBtn.addEventListener('click', addHarmonic);
+        addNegHarmonicBtn.addEventListener('click', addNegativeHarmonic);
+
+        // Drawing mode button event listener
+        drawModeBtn.addEventListener('click', () => {
+            isDrawingMode = !isDrawingMode;
+            if (isDrawingMode) {
+                drawModeBtn.textContent = 'Disable Drawing Mode';
+                drawModeBtn.style.backgroundColor = '#ff6666';
+                canvas.style.cursor = 'crosshair';
+            } else {
+                drawModeBtn.textContent = 'Enable Drawing Mode';
+                drawModeBtn.style.backgroundColor = '#4CAF50';
+                canvas.style.cursor = 'default';
+            }
+        });
+
+        // Clear drawing button event listener
+        clearDrawingBtn.addEventListener('click', () => {
+            userDrawnPoints = [];
+            if (!isAnimating) {
+                draw(0);
+            }
+        });
+
+        // Attach mouse event listeners to canvas
+        canvas.addEventListener('mousedown', onMouseDown);
+        canvas.addEventListener('mousemove', onMouseMove);
+        canvas.addEventListener('mouseup', onMouseUp);
+
+        // Initialize magnitude controls
+        renderMagnitudeControls();
+
+        // Initial draw
+        draw(0);
+    </script>
+</body>
+</html>
