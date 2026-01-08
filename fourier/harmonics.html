@@ -16,16 +16,17 @@
             overflow: hidden;
             background-color: #1a1a1a;
             color: #ffffff;
+            font-size: 12px;
         }
 
         #controls {
-            height: 200px;
+            height: 140px;
             background-color: #2a2a2a;
-            padding: 20px;
+            padding: 12px;
             border-bottom: 2px solid #444;
             overflow-y: auto;
             display: flex;
-            gap: 30px;
+            gap: 20px;
         }
 
         .controls-left {
@@ -39,7 +40,7 @@
 
         #canvas-container {
             width: 100vw;
-            height: calc(100vh - 200px);
+            height: calc(100vh - 140px);
         }
 
         canvas {
@@ -48,14 +49,15 @@
         }
 
         button {
-            padding: 10px 20px;
-            font-size: 16px;
+            padding: 6px 12px;
+            font-size: 12px;
             background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            margin-top: 10px;
+            margin-top: 6px;
+            margin-right: 6px;
         }
 
         button:hover {
@@ -63,33 +65,49 @@
         }
 
         .control-group {
-            margin-top: 15px;
+            margin-top: 6px;
         }
 
         .control-group label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
+            font-size: 11px;
         }
 
         input[type="range"] {
-            width: 200px;
+            width: 150px;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 4px;
+        }
+
+        h2 {
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        h3 {
+            font-size: 14px;
+            margin-bottom: 6px;
         }
 
         .harmonic-control {
-            margin-bottom: 10px;
-            padding: 5px;
+            margin-bottom: 6px;
+            padding: 4px;
             background-color: #333;
             border-radius: 4px;
+            font-size: 11px;
         }
 
         .harmonic-control label {
             display: inline-block;
-            width: 150px;
+            width: 140px;
         }
 
         .harmonic-control span {
             display: inline-block;
-            width: 50px;
+            width: 40px;
         }
     </style>
 </head>
@@ -97,7 +115,13 @@
     <div id="controls">
         <div class="controls-left">
             <h2>Complex Harmonics</h2>
-            <button id="startBtn">Start Animation</button>
+            <div>
+                <button id="startBtn">Start Animation</button>
+                <button id="addHarmonicBtn">Add Harmonic (+)</button>
+                <button id="addNegHarmonicBtn">Add Harmonic (-)</button>
+                <button id="drawModeBtn">Enable Drawing Mode</button>
+                <button id="clearDrawingBtn">Clear Drawing</button>
+            </div>
 
             <div class="control-group">
                 <label for="speedSlider">Speed: <span id="speedValue">0.2x</span></label>
@@ -105,13 +129,10 @@
             </div>
 
             <div class="control-group">
-                <button id="addHarmonicBtn">Add Harmonic (+)</button>
-                <button id="addNegHarmonicBtn">Add Harmonic (-)</button>
-            </div>
-
-            <div class="control-group">
-                <button id="drawModeBtn">Enable Drawing Mode</button>
-                <button id="clearDrawingBtn">Clear Drawing</button>
+                <label>
+                    <input type="checkbox" id="hideArrowsCheckbox">
+                    Hide Arrows (Show Only Shape)
+                </label>
             </div>
         </div>
 
@@ -137,6 +158,7 @@
         const magnitudeControls = document.getElementById('magnitudeControls');
         const drawModeBtn = document.getElementById('drawModeBtn');
         const clearDrawingBtn = document.getElementById('clearDrawingBtn');
+        const hideArrowsCheckbox = document.getElementById('hideArrowsCheckbox');
 
         // Constants
         const UNIT_LENGTH = 100; // 1 unit = 100 pixels
@@ -165,6 +187,9 @@
         let isDrawingMode = false;
         let isDrawing = false;
         let userDrawnPoints = [];
+
+        // Arrow visibility
+        let hideArrows = false;
 
         // Set canvas size to fill container
         function resizeCanvas() {
@@ -283,7 +308,10 @@
                 const endX = currentX + vectorX;
                 const endY = currentY + vectorY;
 
-                drawArrow(currentX, currentY, endX, endY, colors[index % colors.length], 2);
+                // Only draw arrows if not hidden
+                if (!hideArrows) {
+                    drawArrow(currentX, currentY, endX, endY, colors[index % colors.length], 2);
+                }
 
                 // Update current position for next vector
                 currentX = endX;
@@ -547,6 +575,11 @@
             if (!isAnimating) {
                 draw(0);
             }
+        });
+
+        // Hide arrows checkbox event listener
+        hideArrowsCheckbox.addEventListener('change', (e) => {
+            hideArrows = e.target.checked;
         });
 
         // Attach mouse event listeners to canvas
